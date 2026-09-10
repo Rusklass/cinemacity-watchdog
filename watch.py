@@ -26,13 +26,15 @@ UA = (
     "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 )
 
-FILM_PATTERN = os.environ.get("FILM_PATTERN", "odyss").lower()
+FILM_PATTERN = os.environ.get("FILM_PATTERN", "dun").lower()
 AUDITORIUM_PATTERN = os.environ.get("AUDITORIUM_PATTERN", "imax").lower()
 HORIZON_DAYS = int(os.environ.get("HORIZON_DAYS", "180"))
 # Atribut, podle kterého API umí filtrovat kina — levná nápověda, kde hledat
 # IMAX sály. Doplňuje (nenahrazuje) sondu podle názvu sálu.
 HINT_ATTR = os.environ.get("HINT_ATTR", "70-mm")
 DELAY = float(os.environ.get("REQUEST_DELAY", "0.25"))
+# Minimální podíl volných míst (0.50 = alespoň 50 % sedadel volných)
+MIN_AVAILABILITY_RATIO = float(os.environ.get("MIN_AVAILABILITY_RATIO", "0.50"))
 
 CZ_DAYS = ["po", "út", "st", "čt", "pá", "so", "ne"]
 
@@ -92,6 +94,20 @@ def hint_cinema_ids():
     return {c["id"] for c in body["cinemas"]}
 
 
+def matches_film(film_name):
+    if not film_name:
+        return False
+    name = film_name.lower()
+    patterns = [p.strip() for p in FILM_PATTERN.split(",") if p.strip()]
+    for pat in patterns:
+        if pat in name:
+            return True
+        # Cinemacity.cz lists the movie in Czech ("Duna" instead of "Dune")
+        if pat == "dune" and "duna" in name:
+            return True
+    return False
+
+
 def is_target_hall(event):
     return AUDITORIUM_PATTERN in (event.get("auditorium") or "").lower()
 
@@ -122,7 +138,7 @@ def collect():
             films, events = day_cache.get((cid, day)) or fetch_day(cid, day)
             for e in events:
                 film = films.get(e["filmId"], {})
-                if FILM_PATTERN not in film.get("name", "").lower():
+                if not matches_film(film.get("name", "")):
                     continue
                 if not is_target_hall(e):
                     continue
@@ -145,6 +161,7 @@ def collect():
                     # tady dělá 404 — musí se vynechat.
                     "booking": f"https://tickets.cinemacity.cz/order/{e.get('presentationCode') or e['id']}",
                     "soldOut": bool(e.get("soldOut")),
+                    "availabilityRatio": e.get("availabilityRatio"),
                 }
     return found
 
@@ -212,6 +229,8 @@ def render(new_events, gone_events):
                     flags.append("dabing")
                 if e["soldOut"]:
                     flags.append("**vyprodáno**")
+                elif e.get("availabilityRatio") is not None:
+                    flags.append(f"{round(e['availabilityRatio'] * 100)} % volno")
                 suffix = f" — {', '.join(flags)}" if flags else ""
                 link = f" — [koupit]({e['booking']})" if e["booking"] else ""
                 lines.append(f"- {fmt_dt(e['datetime'])} · {e['auditorium']}{suffix}{link}")
@@ -232,7 +251,8 @@ def render(new_events, gone_events):
     lines.append("")
     lines.append(
         f"<sub>Zkontrolováno {now():%d. %m. %Y %H:%M} · "
-        f"film ~ `{FILM_PATTERN}` · sál ~ `{AUDITORIUM_PATTERN}`</sub>"
+        f"film ~ `{FILM_PATTERN}` · sál ~ `{AUDITORIUM_PATTERN}` · "
+        f"volno ≥ {int(MIN_AVAILABILITY_RATIO * 100)} %</sub>"
     )
     return "\n".join(lines)
 
@@ -252,7 +272,56 @@ def title_for(new_events):
         span += f"–{fmt_short(days[-1])}"
     n = len(new_events)
     word = "nový termín" if n == 1 else ("nové termíny" if n < 5 else "nových termínů")
-    return f"🎬 {film} v IMAXu: {n} {word} ({span})"
+    hall_str = (
+        " v IMAXu"
+        if AUDITORIUM_PATTERN == "imax"
+        else (f" ({AUDITORIUM_PATTERN.upper()})" if AUDITORIUM_PATTERN else "")
+    )
+    return f"🎬 {film}{hall_str}: {n} {word} ({span})"
+
+
+def send_ntfy(title, body):
+    topic = os.environ.get("NTFY_TOPIC")
+    if not topic:
+        return
+    try:
+        req = urllib.request.Request(
+            f"https://ntfy.sh/{topic}",
+            data=body.encode("utf-8"),
+            headers={
+                "Title": title.encode("utf-8"),
+                "Tags": "movie_camera,ticket",
+                "Priority": "high",
+                "User-Agent": UA,
+            },
+        )
+        with urllib.request.urlopen(req, timeout=10):
+            print(f"Push notifikace odeslána na ntfy.sh/{topic}")
+    except Exception as exc:
+        print(f"Odeslání na ntfy selhalo: {exc}", file=sys.stderr)
+
+
+def send_telegram(title, body):
+    token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID")
+    if not token or not chat_id:
+        return
+    try:
+        msg = f"*{title}*\n\n{body}"
+        payload = json.dumps({
+            "chat_id": chat_id,
+            "text": msg,
+            "disable_web_page_preview": False,
+        }).encode("utf-8")
+        req = urllib.request.Request(
+            f"https://api.telegram.org/bot{token}/sendMessage",
+            data=payload,
+            headers={"Content-Type": "application/json", "User-Agent": UA},
+        )
+        with urllib.request.urlopen(req, timeout=10):
+            print("Notifikace na Telegram odeslána.")
+    except Exception as exc:
+        print(f"Odeslání na Telegram selhalo: {exc}", file=sys.stderr)
 
 
 def gh_output(**kwargs):
@@ -262,6 +331,15 @@ def gh_output(**kwargs):
     with open(path, "a", encoding="utf-8") as fh:
         for key, value in kwargs.items():
             fh.write(f"{key}={value}\n")
+
+
+def passes_availability(e):
+    if e["soldOut"]:
+        return False
+    ratio = e.get("availabilityRatio")
+    if ratio is not None and ratio < MIN_AVAILABILITY_RATIO:
+        return False
+    return True
 
 
 def main():
@@ -286,11 +364,14 @@ def main():
         return
 
     if args.force_report:
-        new_events = sorted(current.values(), key=lambda e: e["datetime"])
+        new_events = sorted(
+            (v for v in current.values() if passes_availability(v)),
+            key=lambda e: e["datetime"],
+        )
         gone = []
     else:
         new_events = sorted(
-            (v for k, v in current.items() if k not in known),
+            (v for k, v in current.items() if k not in known and passes_availability(v)),
             key=lambda e: e["datetime"],
         )
         future = now().isoformat()
@@ -307,7 +388,18 @@ def main():
         return
 
     body = render(new_events, gone)
-    title = title_for(new_events) if new_events else "🎬 Odyssea v IMAXu: zrušené termíny"
+    if new_events:
+        title = title_for(new_events)
+    elif gone:
+        film = gone[0]["film"]
+        hall_str = (
+            " v IMAXu"
+            if AUDITORIUM_PATTERN == "imax"
+            else (f" ({AUDITORIUM_PATTERN.upper()})" if AUDITORIUM_PATTERN else "")
+        )
+        title = f"🎬 {film}{hall_str}: zrušené termíny"
+    else:
+        title = "🎬 Cinema City: změna v rozpisu"
     with open(args.report, "w", encoding="utf-8") as fh:
         fh.write(body + "\n")
     with open(args.title, "w", encoding="utf-8") as fh:
@@ -315,6 +407,8 @@ def main():
 
     print(f"\n{title}\n")
     print(body)
+    send_ntfy(title, body)
+    send_telegram(title, body)
     gh_output(has_news="true")
 
 
