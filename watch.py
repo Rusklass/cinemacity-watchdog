@@ -11,6 +11,7 @@ new additions since the last run.
 import argparse
 import json
 import os
+import re
 import sys
 import time
 import urllib.error
@@ -289,25 +290,31 @@ def send_ntfy(title, body):
 
 def send_telegram(title, body):
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
-    chat_id = os.environ.get("TELEGRAM_CHAT_ID")
-    if not token or not chat_id:
+    raw_chat_ids = os.environ.get("TELEGRAM_CHAT_ID")
+    if not token or not raw_chat_ids:
         return
-    try:
-        msg = f"*{title}*\n\n{body}"
-        payload = json.dumps({
-            "chat_id": chat_id,
-            "text": msg,
-            "disable_web_page_preview": False,
-        }).encode("utf-8")
-        req = urllib.request.Request(
-            f"https://api.telegram.org/bot{token}/sendMessage",
-            data=payload,
-            headers={"Content-Type": "application/json", "User-Agent": UA},
-        )
-        with urllib.request.urlopen(req, timeout=10):
-            print("Telegram notification sent.")
-    except Exception as exc:
-        print(f"Failed to send Telegram notification: {exc}", file=sys.stderr)
+    # Supports multiple chat IDs separated by commas, semicolons, or spaces
+    chat_ids = [c.strip() for c in re.split(r"[,;\s]+", raw_chat_ids) if c.strip()]
+    if not chat_ids:
+        return
+
+    msg = f"*{title}*\n\n{body}"
+    for chat_id in chat_ids:
+        try:
+            payload = json.dumps({
+                "chat_id": chat_id,
+                "text": msg,
+                "disable_web_page_preview": False,
+            }).encode("utf-8")
+            req = urllib.request.Request(
+                f"https://api.telegram.org/bot{token}/sendMessage",
+                data=payload,
+                headers={"Content-Type": "application/json", "User-Agent": UA},
+            )
+            with urllib.request.urlopen(req, timeout=10):
+                print(f"Telegram notification sent to {chat_id}.")
+        except Exception as exc:
+            print(f"Failed to send Telegram notification to {chat_id}: {exc}", file=sys.stderr)
 
 
 def gh_output(**kwargs):

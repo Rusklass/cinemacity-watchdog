@@ -81,7 +81,7 @@ Choose whichever method you prefer:
 
 ### 3. Telegram Bot
 - Create a bot with [@BotFather](https://t.me/BotFather) on Telegram to get your `TELEGRAM_BOT_TOKEN`.
-- Get your user ID from [@userinfobot](https://t.me/userinfobot) (`TELEGRAM_CHAT_ID`).
+- Get your user ID from [@userinfobot](https://t.me/userinfobot) (`TELEGRAM_CHAT_ID`). Supports **multiple IDs** separated by commas (e.g. `123456789, 987654321`) to notify multiple people at once.
 - Add both as GitHub Secrets (`TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`).
 
 For step-by-step guidance, see [`.github/SECRETS_TEMPLATE.md`](.github/SECRETS_TEMPLATE.md).

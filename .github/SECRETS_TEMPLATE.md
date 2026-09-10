@@ -19,7 +19,7 @@ This document lists the secrets and variables you can configure in your GitHub r
 |---|---|---|---|
 | `NTFY_TOPIC` | Optional | `dune-imax-watchdog-abc123xyz` | **Recommended:** Topic name for the free [ntfy.sh](https://ntfy.sh) mobile app. Sends instant push notifications with sound directly to your phone. |
 | `TELEGRAM_BOT_TOKEN` | Optional | `7123456789:AAFn...` | Bot token obtained from [@BotFather](https://t.me/BotFather) on Telegram. |
-| `TELEGRAM_CHAT_ID` | Optional | `123456789` | Your numeric Telegram user/chat ID from [@userinfobot](https://t.me/userinfobot). |
+| `TELEGRAM_CHAT_ID` | Optional | `123456789, 987654321` | Numeric Telegram user or chat ID(s). **Supports multiple IDs separated by commas or spaces** to notify multiple people at once! |
 
 > [!TIP]
 > You do **not** need to configure both. Setting just `NTFY_TOPIC` is the easiest and fastest way to get mobile push alerts without creating bots or signing up for accounts.
@@ -47,8 +47,8 @@ You can set these under **Repository Variables** (or Secrets) if you wish to cus
 
 ### 2. Fast Mobile Push via Telegram
 1. Message [@BotFather](https://t.me/BotFather) on Telegram, send `/newbot`, and follow prompts to get the token.
-2. Message [@userinfobot](https://t.me/userinfobot) on Telegram to get your user ID.
+2. Message [@userinfobot](https://t.me/userinfobot) on Telegram to get your user ID. Have any other person who wants alerts do the same.
 3. In GitHub, add:
    - `TELEGRAM_BOT_TOKEN`: your bot token
-   - `TELEGRAM_CHAT_ID`: your chat ID
-4. Send `/start` to your newly created bot so it has permission to message you.
+   - `TELEGRAM_CHAT_ID`: your chat ID (or multiple IDs separated by commas, e.g. `123456789, 987654321`)
+4. **Important:** Every person must send `/start` to your newly created bot in Telegram so the bot has permission to message them.
