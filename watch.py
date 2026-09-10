@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Hlídá rozpis Cinema City a hlásí nově vypsaná představení.
+"""Monitors Cinema City schedule and reports newly announced screenings.
 
-Ve výchozím nastavení: film "Odyssea" v sále, jehož název obsahuje "IMAX".
-Data bere z veřejného JSON API cinemacity.cz (bez klíče, bez přihlášení).
+Default configuration: film matching "dun" (Dune / Duna) in "IMAX" auditorium.
+Fetches data from the public Cinema City JSON API (no API key or login required).
 
-Stav (už viděná představení) drží v JSON souboru, takže při každém běhu
-hlásí jen to, co přibylo od minule.
+Maintains state (already seen screenings) in a JSON file to only report
+new additions since the last run.
 """
 
 import argparse
@@ -29,29 +29,26 @@ UA = (
 FILM_PATTERN = os.environ.get("FILM_PATTERN", "dun").lower()
 AUDITORIUM_PATTERN = os.environ.get("AUDITORIUM_PATTERN", "imax").lower()
 HORIZON_DAYS = int(os.environ.get("HORIZON_DAYS", "180"))
-# Atribut, podle kterého API umí filtrovat kina — levná nápověda, kde hledat
-# IMAX sály. Doplňuje (nenahrazuje) sondu podle názvu sálu.
+# Attribute used by API to pre-filter cinemas — helps discover IMAX auditoriums cheaply
 HINT_ATTR = os.environ.get("HINT_ATTR", "70-mm")
 DELAY = float(os.environ.get("REQUEST_DELAY", "0.25"))
-# Minimální podíl volných míst (0.50 = alespoň 50 % sedadel volných)
+# Minimum ratio of free seats required to trigger alert (0.50 = at least 50% seats free)
 MIN_AVAILABILITY_RATIO = float(os.environ.get("MIN_AVAILABILITY_RATIO", "0.50"))
 
-CZ_DAYS = ["po", "út", "st", "čt", "pá", "so", "ne"]
+DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
-# API vrací eventDateTime bez zóny, v místním čase kina. Runner v GitHub
-# Actions jede v UTC, takže by se čas představení porovnával s časem o dvě
-# hodiny pozadu — projekce, která právě doběhla, by vypadala jako budoucí
-# a při zmizení z rozpisu by se falešně nahlásila jako zrušená.
+# The API returns eventDateTime in cinema's local time without timezone info.
+# GitHub Actions runner runs in UTC, so we must evaluate in Prague timezone.
 CINEMA_TZ = ZoneInfo("Europe/Prague")
 
 
 def now():
-    """Aktuální čas v zóně kina, bez tzinfo — porovnatelný s daty z API."""
+    """Current time in cinema timezone, without tzinfo — comparable with API timestamps."""
     return datetime.now(CINEMA_TZ).replace(tzinfo=None)
 
 
 def api(path):
-    """GET na data-api-service; vrací obsah klíče "body"."""
+    """GET request to data-api-service; returns content of the 'body' key."""
     url = f"{BASE}{path}"
     last = None
     for attempt in range(4):
@@ -62,7 +59,7 @@ def api(path):
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
             last = exc
             time.sleep(2 ** attempt)
-    raise SystemExit(f"API selhalo po 4 pokusech: {url}\n{last}")
+    raise SystemExit(f"API failed after 4 attempts: {url}\n{last}")
 
 
 def horizon():
@@ -87,7 +84,7 @@ def fetch_day(cinema_id, day):
 
 
 def hint_cinema_ids():
-    """Kina, která podle API mají představení s atributem HINT_ATTR."""
+    """Cinemas that have events with HINT_ATTR according to the API."""
     if not HINT_ATTR:
         return set()
     body = api(f"/cinemas/with-event/until/{horizon()}?attr={HINT_ATTR}&lang={LANG}")
@@ -102,7 +99,7 @@ def matches_film(film_name):
     for pat in patterns:
         if pat in name:
             return True
-        # Cinemacity.cz lists the movie in Czech ("Duna" instead of "Dune")
+        # cinemacity.cz lists the movie in Czech ("Duna" instead of "Dune")
         if pat == "dune" and "duna" in name:
             return True
     return False
@@ -113,11 +110,10 @@ def is_target_hall(event):
 
 
 def collect():
-    """Projde relevantní kina a vrátí {event_id: záznam} pro hlídaná představení.
+    """Scans relevant cinemas and returns {event_id: record} for target screenings.
 
-    Aby se netahal celý rozpis všech kin, běží to dvoufázově: nejdřív se
-    zjistí, která kina vůbec mají hlídaný sál (jedna sonda na kino + nápověda
-    z API), a teprve ta se projdou do hloubky.
+    To avoid downloading full schedules for all cinemas, it runs in two phases:
+    first checks which cinemas have the target auditorium, then scans those in depth.
     """
     cinemas = fetch_cinemas()
     dates_by_cinema = {cid: fetch_dates(cid) for cid in cinemas}
@@ -151,14 +147,8 @@ def collect():
                     "datetime": e["eventDateTime"],
                     "auditorium": e.get("auditorium"),
                     "attrs": e.get("attributeIds", []),
-                    # Žádné z polí, která API nabízí, není použitelné jako
-                    # odkaz: bookingLink vrací na GET 404, obsoleteBookingUrl
-                    # je i podle názvu mrtvý a bookingRouterLaunchLink vede na
-                    # stránku se samoodesílacím POST formulářem, jehož cíl
-                    # (tickets.rel.…) na přímý GET odpoví 403. Ten POST ale
-                    # skončí na prosté adrese /order/{id}, která funguje i na
-                    # GET a otevře rovnou výběr sedadel. Pozor, parametr lang
-                    # tady dělá 404 — musí se vynechat.
+                    # The bookingRouterLaunchLink leads to a self-submitting POST form
+                    # that redirects to /order/{id}, which opens the seat selection directly.
                     "booking": f"https://tickets.cinemacity.cz/order/{e.get('presentationCode') or e['id']}",
                     "soldOut": bool(e.get("soldOut")),
                     "availabilityRatio": e.get("availabilityRatio"),
@@ -175,13 +165,9 @@ def load_state(path):
 
 
 def save_state(path, events):
-    """Zapíše stav, ale jen když se změnila množina představení.
+    """Writes state to file, but only when the set of event IDs has changed.
 
-    Kdyby se soubor přepisoval při každém běhu, měnilo by se v něm razítko
-    "updated" a workflow by si po sobě commitoval prázdnou změnu 48× denně.
-    Rozhoduje proto seznam ID — to je přesně to, na čem stojí hlášení.
-    Volatilní pole (soldOut) se tím pádem neaktualizují; drží se hodnota
-    z chvíle, kdy se představení objevilo poprvé, což je i to, co se hlásí.
+    Prevents creating empty commits if only the 'updated' timestamp would change.
     """
     if set(events) == set(load_state(path).get("events", {})):
         return False
@@ -197,14 +183,14 @@ def save_state(path, events):
 
 
 def prune_past(events):
-    """Zahodí ze stavu představení, která už proběhla — ať soubor neroste."""
+    """Removes past screenings from state so the file does not grow indefinitely."""
     cutoff = (now() - timedelta(days=1)).isoformat()
     return {k: v for k, v in events.items() if v["datetime"] >= cutoff}
 
 
 def fmt_dt(iso):
     dt = datetime.fromisoformat(iso)
-    return f"{CZ_DAYS[dt.weekday()]} {dt.day}. {dt.month}. {dt.year} v {dt:%H:%M}"
+    return f"{DAYS[dt.weekday()]} {dt.day}. {dt.month}. {dt.year} at {dt:%H:%M}"
 
 
 def fmt_short(iso):
@@ -213,10 +199,10 @@ def fmt_short(iso):
 
 
 def render(new_events, gone_events):
-    """Markdown tělo hlášení."""
+    """Markdown report body."""
     lines = []
     if new_events:
-        lines.append(f"### Nově vypsáno ({len(new_events)})\n")
+        lines.append(f"### Newly Scheduled ({len(new_events)})\n")
         for cinema, group in group_by_cinema(new_events):
             lines.append(f"**{cinema}**\n")
             for e in group:
@@ -224,19 +210,19 @@ def render(new_events, gone_events):
                 if "70-mm" in e["attrs"]:
                     flags.append("70mm")
                 if "subbed" in e["attrs"]:
-                    flags.append("titulky")
+                    flags.append("subtitles")
                 if "dubbed" in e["attrs"]:
-                    flags.append("dabing")
+                    flags.append("dubbed")
                 if e["soldOut"]:
-                    flags.append("**vyprodáno**")
+                    flags.append("**sold out**")
                 elif e.get("availabilityRatio") is not None:
-                    flags.append(f"{round(e['availabilityRatio'] * 100)} % volno")
+                    flags.append(f"{round(e['availabilityRatio'] * 100)}% free")
                 suffix = f" — {', '.join(flags)}" if flags else ""
-                link = f" — [koupit]({e['booking']})" if e["booking"] else ""
+                link = f" — [buy tickets]({e['booking']})" if e["booking"] else ""
                 lines.append(f"- {fmt_dt(e['datetime'])} · {e['auditorium']}{suffix}{link}")
             lines.append("")
     if gone_events:
-        lines.append(f"### Zmizelo z rozpisu ({len(gone_events)})\n")
+        lines.append(f"### Removed from Schedule ({len(gone_events)})\n")
         for cinema, group in group_by_cinema(gone_events):
             lines.append(f"**{cinema}**\n")
             for e in group:
@@ -247,12 +233,12 @@ def render(new_events, gone_events):
         None,
     )
     if film_link:
-        lines.append(f"[Stránka filmu na Cinema City]({film_link})")
+        lines.append(f"[Cinema City Movie Page]({film_link})")
     lines.append("")
     lines.append(
-        f"<sub>Zkontrolováno {now():%d. %m. %Y %H:%M} · "
-        f"film ~ `{FILM_PATTERN}` · sál ~ `{AUDITORIUM_PATTERN}` · "
-        f"volno ≥ {int(MIN_AVAILABILITY_RATIO * 100)} %</sub>"
+        f"<sub>Checked {now():%Y-%m-%d %H:%M} · "
+        f"film ~ `{FILM_PATTERN}` · auditorium ~ `{AUDITORIUM_PATTERN}` · "
+        f"free seats ≥ {int(MIN_AVAILABILITY_RATIO * 100)}%</sub>"
     )
     return "\n".join(lines)
 
@@ -271,9 +257,9 @@ def title_for(new_events):
     if len(days) > 1:
         span += f"–{fmt_short(days[-1])}"
     n = len(new_events)
-    word = "nový termín" if n == 1 else ("nové termíny" if n < 5 else "nových termínů")
+    word = "new screening" if n == 1 else "new screenings"
     hall_str = (
-        " v IMAXu"
+        " in IMAX"
         if AUDITORIUM_PATTERN == "imax"
         else (f" ({AUDITORIUM_PATTERN.upper()})" if AUDITORIUM_PATTERN else "")
     )
@@ -296,9 +282,9 @@ def send_ntfy(title, body):
             },
         )
         with urllib.request.urlopen(req, timeout=10):
-            print(f"Push notifikace odeslána na ntfy.sh/{topic}")
+            print(f"Push notification sent to ntfy.sh/{topic}")
     except Exception as exc:
-        print(f"Odeslání na ntfy selhalo: {exc}", file=sys.stderr)
+        print(f"Failed to send ntfy notification: {exc}", file=sys.stderr)
 
 
 def send_telegram(title, body):
@@ -319,9 +305,9 @@ def send_telegram(title, body):
             headers={"Content-Type": "application/json", "User-Agent": UA},
         )
         with urllib.request.urlopen(req, timeout=10):
-            print("Notifikace na Telegram odeslána.")
+            print("Telegram notification sent.")
     except Exception as exc:
-        print(f"Odeslání na Telegram selhalo: {exc}", file=sys.stderr)
+        print(f"Failed to send Telegram notification: {exc}", file=sys.stderr)
 
 
 def gh_output(**kwargs):
@@ -344,22 +330,22 @@ def passes_availability(e):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--state", default="state/seen.json", help="soubor se stavem")
-    ap.add_argument("--seed", action="store_true", help="jen ulož stav, nic nehlas")
-    ap.add_argument("--force-report", action="store_true", help="nahlas vše, i známé")
-    ap.add_argument("--report", default="report.md", help="kam zapsat markdown hlášení")
-    ap.add_argument("--title", default="title.txt", help="kam zapsat titulek issue")
+    ap.add_argument("--state", default="state/seen.json", help="path to state file")
+    ap.add_argument("--seed", action="store_true", help="save current state without reporting")
+    ap.add_argument("--force-report", action="store_true", help="report all matching screenings regardless of state")
+    ap.add_argument("--report", default="report.md", help="file to write markdown report to")
+    ap.add_argument("--title", default="title.txt", help="file to write issue title to")
     args = ap.parse_args()
 
     current = collect()
     state = load_state(args.state)
     known = state.get("events", {})
 
-    print(f"Nalezeno {len(current)} hlídaných představení, ve stavu {len(known)}.")
+    print(f"Found {len(current)} matching screenings, {len(known)} in state.")
 
     if args.seed:
         save_state(args.state, prune_past(current))
-        print(f"Stav zapsán do {args.state} (seed, nic se nehlásí).")
+        print(f"State saved to {args.state} (seed, nothing reported).")
         gh_output(has_news="false")
         return
 
@@ -383,7 +369,7 @@ def main():
     save_state(args.state, prune_past(current))
 
     if not new_events and not gone:
-        print("Nic nového.")
+        print("No new updates.")
         gh_output(has_news="false")
         return
 
@@ -393,13 +379,13 @@ def main():
     elif gone:
         film = gone[0]["film"]
         hall_str = (
-            " v IMAXu"
+            " in IMAX"
             if AUDITORIUM_PATTERN == "imax"
             else (f" ({AUDITORIUM_PATTERN.upper()})" if AUDITORIUM_PATTERN else "")
         )
-        title = f"🎬 {film}{hall_str}: zrušené termíny"
+        title = f"🎬 {film}{hall_str}: cancelled screenings"
     else:
-        title = "🎬 Cinema City: změna v rozpisu"
+        title = "🎬 Cinema City: schedule update"
     with open(args.report, "w", encoding="utf-8") as fh:
         fh.write(body + "\n")
     with open(args.title, "w", encoding="utf-8") as fh:

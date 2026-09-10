@@ -1,143 +1,129 @@
 # cinemacity-watchdog
 
-Hlídá rozpis [Cinema City](https://www.cinemacity.cz) a když přibude nový termín
-**Duny v IMAXu** (prosinec 2026), založí v tomhle repu issue a **přiřadí ho vlastníkovi repa**.
-GitHub z něj pošle e-mail i push do mobilní appky.
+Monitors [Cinema City](https://www.cinemacity.cz) schedule and automatically alerts you when new screenings of **Dune in IMAX** (December 2026) are scheduled.
 
-Na přiřazení záleží: e-mail chodí ve výchozím nastavení jen u „Participating"
-notifikací (přiřazení, zmínky, odpovědi). Pouhé sledování repa („Watching")
-dává jen web/mobile notifikaci — e-mail je pro něj v Settings → Notifications
-vypnutý, dokud si ho člověk nezapne.
+Notifications can be delivered to your phone via:
+- **GitHub Mobile** push notifications & email
+- **[ntfy.sh](https://ntfy.sh)** instant loud push alerts (no registration required)
+- **Telegram Bot** chat messages
 
-Běží v GitHub Actions, takže funguje i když je počítač vypnutý.
+Runs automatically 24/7 on GitHub Actions, requiring no local server or running computer.
 
-## Jak to funguje
+---
 
-- Workflow [`.github/workflows/watch.yml`](.github/workflows/watch.yml) běží
-  **každou půlhodinu** (v :08, :38, :21, :51 — mimo špičky, kdy GitHub cron nejvíc
-  zahazuje běhy). Repo je veřejné, takže minuty Actions jsou zdarma bez limitu.
-- [`watch.py`](watch.py) stáhne rozpis z veřejného JSON API cinemacity.cz
-  (`/cz/data-api-service/v1/quickbook/10101/…`) — bez klíče, bez přihlášení.
-- Seznam už viděných představení drží v [`state/seen.json`](state/seen.json),
-  který si workflow po každém běhu commitne zpátky. Hlásí se tedy jen přírůstky.
-- Nová představení → issue s časem, sálem, příznaky (70mm / titulky / vyprodáno)
-  a přímým odkazem na nákup vstupenky. Hlásí se i termíny, které z rozpisu
-  **zmizely** (zrušené projekce).
-- Issue se **hned po založení zavírá**. Slouží jen jako doručovací kanál pro
-  e-mail, který GitHub pošle už při jeho vzniku — seznam otevřených issues tak
-  zůstává prázdný a nic není potřeba uklízet ručně. Obsah zůstává čitelný mezi
-  zavřenými.
-- Časy se počítají v zóně kina (`Europe/Prague`), ne v UTC runneru. Bez toho
-  by projekce, která právě doběhla, vypadala jako budoucí a při zmizení
-  z rozpisu by se falešně nahlásila jako zrušená.
+## How It Works
 
-Jeden běh je ~45 HTTP dotazů a trvá ~20 sekund.
+- **GitHub Actions Cron:** The workflow [`.github/workflows/watch.yml`](.github/workflows/watch.yml) runs every ~30 minutes (at :08, :38, :21, :51 past the hour). Since public repositories receive unlimited GitHub Actions minutes, it runs completely free.
+- **Public API:** [`watch.py`](watch.py) queries Cinema City's public JSON API (`/cz/data-api-service/v1/quickbook/10101/…`) without requiring any login or API keys.
+- **State Management:** Seen screenings are tracked in [`state/seen.json`](state/seen.json), which the workflow commits back to the repository after each run. Only new additions or cancellations trigger alerts.
+- **Delivery via GitHub Issues:** When new screenings appear, GitHub Actions creates an issue assigned directly to you, immediately firing email and phone push notifications via the GitHub Mobile app. The issue is closed immediately afterward to keep your open issues list clean.
+- **Direct Mobile Push:** Optionally delivers instant notifications with direct ticket purchase links to **ntfy** or **Telegram**.
+- **Accurate Timezones:** Screenings are evaluated in cinema local time (`Europe/Prague`), avoiding false alerts due to UTC runner offsets.
 
-## Co přesně se hlídá
+Each run executes ~45 fast HTTP queries in ~20 seconds.
 
-Představení, kde **název filmu** obsahuje `dun` (odpovídá českému „Duna: část třetí“ i anglickému „Dune“) **a** **název sálu** obsahuje
-`imax`. Aktuálně tomu odpovídá **Praha Flora**, sál
-`IMAX VOLVO` (kde Duna startuje v prosinci 2026).
+---
 
-Aby se netahal celý rozpis všech třinácti kin, hledá se dvoufázově: nejdřív se
-zjistí, která kina vůbec mají IMAX sál (jedna sonda na nejbližší hrací den plus
-nápověda z API přes atribut `70-mm`), a do hloubky se projdou jen ta. Kdyby
-IMAX přibyl v jiném kině, chytí se to samo.
+## What It Monitors
 
-Chování jde změnit proměnnými prostředí ve workflow nebo lokálně:
+By default, it tracks screenings where:
+- **Film title** contains `dun` (matches both Czech *„Duna: část třetí“* and English *„Dune“*).
+- **Auditorium** contains `imax` (targeting **Praha Flora — IMAX VOLVO**).
+- **Free seats** ratio is **≥ 50%** (`MIN_AVAILABILITY_RATIO=0.50`), ensuring you are only alerted when prime rows (rows 7–10) are still available!
 
-| Proměnná | Výchozí | Význam |
-| --- | --- | --- |
-| `FILM_PATTERN` | `dun` | podřetězec názvu filmu (`dun` nebo `dune`, case-insensitive) |
-| `AUDITORIUM_PATTERN` | `imax` | podřetězec názvu sálu (nebo prázdné `""` pro všechny sály) |
-| `MIN_AVAILABILITY_RATIO` | `0.50` | hlásit jen představení s **více než 50 % volných míst** (zajišťuje volné nejlepší řady) |
-| `HORIZON_DAYS` | `180` | jak daleko dopředu se ptát (180 dní pokrývá prosinec 2026) |
-| `HINT_ATTR` | `70-mm` | atribut pro levné dohledání kandidátských kin |
-| `REQUEST_DELAY` | `0.25` | pauza mezi dotazy na API (s) |
+### Configuration Options
 
-Hlídat cokoli jiného (třeba `FILM_PATTERN=dune`, `AUDITORIUM_PATTERN=4dx`) tedy
-znamená přepsat dvě proměnné a smazat `state/seen.json`.
+You can customize the watchdog by setting environment variables or GitHub Secrets/Variables:
 
-## Chci to hlídat taky (fork)
+| Variable | Default | Description |
+|---|---|---|
+| `FILM_PATTERN` | `dun` | Film name substring (`dun` or `dune`, case-insensitive) |
+| `AUDITORIUM_PATTERN` | `imax` | Auditorium name substring (or empty `""` for all auditoriums) |
+| `MIN_AVAILABILITY_RATIO` | `0.50` | Only report screenings with **at least 50% free seats** (guarantees prime rows are open) |
+| `HORIZON_DAYS` | `180` | Days ahead to search (180 days easily covers December 2026) |
+| `HINT_ATTR` | `70-mm` | Attribute used to pre-filter candidate cinemas cheaply |
+| `REQUEST_DELAY` | `0.25` | Delay between API requests (seconds) |
+| `NTFY_TOPIC` | *(empty)* | Topic name for instant push notifications via [ntfy.sh](https://ntfy.sh) |
+| `TELEGRAM_BOT_TOKEN` | *(empty)* | Telegram Bot token from [@BotFather](https://t.me/BotFather) |
+| `TELEGRAM_CHAT_ID` | *(empty)* | Telegram user or group chat ID |
 
-Watchdog nepotřebuje žádné tokeny ani secrets — API Cinema City je veřejné
-a na zakládání issues stačí vestavěný `GITHUB_TOKEN`. Rozjedeš ho takhle:
+---
 
-1. **Forkni** si tohle repo.
-2. **Settings → General → Features → zaškrtni `Issues`.** Forky mají issues
-   vypnuté a bez nich by watchdog neměl kudy hlásit.
-3. **Actions → „I understand my workflows, go ahead and enable them".**
-   GitHub v forcích naplánované workflows nespouští, dokud je nepovolíš.
-4. Hotovo. Issues se zakládají a přiřazují tobě, protože workflow používá
-   `${{ github.repository_owner }}` — nic přepisovat nemusíš.
+## Setting Up Your Own Watchdog (GitHub Fork)
 
-Stav v `state/seen.json` se forkne s sebou, takže tě to nezasype aktuálním
-rozpisem a ozve se až s prvním novým termínem. Chceš-li hned vidět, co se
-hraje teď, spusť workflow ručně s `force_report`.
+The watchdog requires no third-party hosting:
 
-Hlídat jiný film než Odysseu: přepiš `FILM_PATTERN` (a případně
-`AUDITORIUM_PATTERN`) ve workflow a smaž obsah `state/seen.json`.
+1. **Fork** this repository to your GitHub account.
+2. **Enable Issues:** Go to **Settings → General → Features → check `Issues`**. *(Forks have issues disabled by default; without this, notifications cannot be created).*
+3. **Enable Actions:** Go to the **Actions** tab and click **"I understand my workflows, go ahead and enable them"**.
+4. Done! The workflow uses `${{ github.repository_owner }}` to assign notifications directly to you.
 
-## Ruční spuštění
+To verify immediately, run the workflow manually:
+- Go to **Actions → Cinema City watchdog → Run workflow** (optionally check `force_report`).
 
-**Actions → Cinema City watchdog → Run workflow**. Zaškrtnutí *force_report*
-nahlásí všechny aktuální termíny, i ty už známé — hodí se na ověření, že to žije,
-nebo jako „ukaž mi, co teď hrajou“.
+---
 
-```bash
-gh workflow run watch.yml --repo TarkDetrius/cinemacity-watchdog -f force_report=true
-```
+## 📱 Mobile Phone Notifications
 
-## Lokální spuštění
+Choose whichever method you prefer:
 
-Čistý Python 3, žádné externí knihovny ani závislosti:
+### 1. GitHub Mobile App (Default, No Extra Setup)
+- Install the official **GitHub** app on iOS or Android and log in.
+- Because issues are assigned to your account, GitHub sends a **push notification straight to your lock screen** and an email.
 
-**Windows (PowerShell):**
+### 2. ntfy.sh (Instant Loud Push, No Account Needed — Recommended)
+- Install the free **ntfy** app (iOS / Android).
+- Tap `+` and subscribe to any unique topic name (e.g. `dune-imax-watchdog-unique123`).
+- In your GitHub repo: **Settings → Secrets and variables → Actions → New repository secret**:
+  - Name: `NTFY_TOPIC`
+  - Value: `dune-imax-watchdog-unique123`
+- You will receive instant notifications with direct links to book seats.
+
+### 3. Telegram Bot
+- Create a bot with [@BotFather](https://t.me/BotFather) on Telegram to get your `TELEGRAM_BOT_TOKEN`.
+- Get your user ID from [@userinfobot](https://t.me/userinfobot) (`TELEGRAM_CHAT_ID`).
+- Add both as GitHub Secrets (`TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`).
+
+For step-by-step guidance, see [`.github/SECRETS_TEMPLATE.md`](.github/SECRETS_TEMPLATE.md).
+
+---
+
+## Local Execution
+
+Runs on pure Python 3 with **zero third-party dependencies**:
+
+### Windows (PowerShell)
 ```powershell
-# Standardní kontrola
+# Standard check (reports only new screenings vs state/seen.json)
 python watch.py --state state/seen.json
 
-# Výpis všech nalezených termínů (i už známých)
+# Report all matching screenings regardless of state
 python watch.py --force-report
 
-# Sledování jiného filmu / všech sálů:
-$env:FILM_PATTERN = "dun"
-$env:AUDITORIUM_PATTERN = ""  # všechna kina a všechny sály
+# Search all auditoriums (not just IMAX):
+$env:AUDITORIUM_PATTERN = ""
+python watch.py --force-report
+
+# Test phone alert locally via ntfy:
+$env:NTFY_TOPIC = "your-topic-name"
+$env:MIN_AVAILABILITY_RATIO = "0.01"
 python watch.py --force-report
 ```
 
-**Linux / macOS (Bash):**
+### Linux / macOS (Bash)
 ```bash
 python3 watch.py --state state/seen.json
 python3 watch.py --force-report
 ```
 
-Užitečné přepínače:
-- `--force-report`: vypíše všechna nalezená představení bez ohledu na stav.
-- `--seed`: jen zapíše aktuální stav do JSON souboru a nic nehlásí.
+Useful CLI options:
+- `--force-report`: outputs all matching screenings regardless of state.
+- `--seed`: saves current schedule state to JSON file without sending notifications.
 
-## Notifikace do mobilu
+---
 
-Máš tři možnosti, jak dostávat okamžitá upozornění na telefon:
+## Maintenance
 
-### 1. Aplikace GitHub Mobile (výchozí, bez další konfigurace)
-- Stáhni si appku **GitHub** (iOS / Android) a přihlas se.
-- Protože workflow vytváří issue a přiřazuje ho přímo tobě, GitHub ti automaticky pošle **push notifikaci na zamknutou obrazovku** a e-mail.
-
-### 2. ntfy.sh (okamžitý push bez registrace — doporučeno)
-- Stáhni si zdarma aplikaci **ntfy** (iOS / Android).
-- V appce klikni na `+` a přidej libovolné téma, např. `duna-imax-watchdog-mojejmeno`.
-- Ve forku na GitHubu jdi do **Settings → Secrets and variables → Actions** a přidej secret `NTFY_TOPIC` s názvem tvého tématu.
-- Při každém novém termínu ti přijde hlasitá push notifikace s přímým odkazem na nákup!
-
-### 3. Telegram Bot
-- Vytvoř si bota přes `@BotFather` a získej `TELEGRAM_BOT_TOKEN`.
-- Zjisti své ID přes `@userinfobot` (`TELEGRAM_CHAT_ID`).
-- Ulož je do GitHub Secrets (`TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`).
-
-## Údržba
-
-- **Kvóta Actions:** repo je záměrně veřejné — u veřejných repozitářů jsou minuty
-  GitHub Actions zdarma bez limitu.
-- **Až Duna dohraje:** watchdog přestane hlásit. Buď workflow vypni v záložce Actions,
-  nebo přepiš `FILM_PATTERN` na další film.
+- **Actions quota:** Public repositories have unlimited Actions minutes for free.
+- **60-day pause prevention:** GitHub automatically pauses scheduled cron workflows if a repository has no commits for 60 days. This watchdog commits state changes back to the repository, keeping it active.
+- **After the movie run:** Disable the workflow (**Actions → Disable workflow**) or update `FILM_PATTERN` to monitor another upcoming release.
