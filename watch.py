@@ -33,8 +33,8 @@ HORIZON_DAYS = int(os.environ.get("HORIZON_DAYS", "180"))
 # Attribute used by API to pre-filter cinemas — helps discover IMAX auditoriums cheaply
 HINT_ATTR = os.environ.get("HINT_ATTR", "70-mm")
 DELAY = float(os.environ.get("REQUEST_DELAY", "0.25"))
-# Minimum ratio of free seats required to trigger alert (0.50 = at least 50% seats free)
-MIN_AVAILABILITY_RATIO = float(os.environ.get("MIN_AVAILABILITY_RATIO", "0.50"))
+# Minimum ratio of free seats required to trigger alert (0.45 = at least 45% seats free)
+MIN_AVAILABILITY_RATIO = float(os.environ.get("MIN_AVAILABILITY_RATIO", "0.45"))
 
 DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
@@ -340,9 +340,23 @@ def main():
     ap.add_argument("--state", default="state/seen.json", help="path to state file")
     ap.add_argument("--seed", action="store_true", help="save current state without reporting")
     ap.add_argument("--force-report", action="store_true", help="report all matching screenings regardless of state")
+    ap.add_argument("--test-notification", action="store_true", help="send initial/startup test notification to verify Telegram and ntfy")
     ap.add_argument("--report", default="report.md", help="file to write markdown report to")
     ap.add_argument("--title", default="title.txt", help="file to write issue title to")
     args = ap.parse_args()
+
+    if args.test_notification:
+        test_title = "🎬 Cinema City Watchdog: Active"
+        test_body = (
+            "✅ Watchdog is running and notifications are working!\n\n"
+            f"• Film: `{FILM_PATTERN}`\n"
+            f"• Hall: `{AUDITORIUM_PATTERN}`\n"
+            f"• Min free seats: `{int(MIN_AVAILABILITY_RATIO * 100)}%`\n\n"
+            "Monitoring Cinema City schedule 24/7."
+        )
+        print(f"\n{test_title}\n{test_body}\n")
+        send_ntfy(test_title, test_body)
+        send_telegram(test_title, test_body)
 
     current = collect()
     state = load_state(args.state)
@@ -373,7 +387,13 @@ def main():
             key=lambda e: e["datetime"],
         )
 
-    save_state(args.state, prune_past(current))
+    # Only persist events that were already known, or newly passed availability,
+    # so events below the threshold aren't permanently swallowed if availability improves.
+    events_to_save = {
+        k: v for k, v in current.items()
+        if k in known or passes_availability(v)
+    }
+    save_state(args.state, prune_past(events_to_save))
 
     if not new_events and not gone:
         print("No new updates.")

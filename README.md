@@ -29,7 +29,7 @@ Each run executes ~45 fast HTTP queries in ~20 seconds.
 By default, it tracks screenings where:
 - **Film title** contains `dun` (matches both Czech *„Duna: část třetí“* and English *„Dune“*).
 - **Auditorium** contains `imax` (targeting **Praha Flora — IMAX VOLVO**).
-- **Free seats** ratio is **≥ 50%** (`MIN_AVAILABILITY_RATIO=0.50`), ensuring you are only alerted when prime rows (rows 7–10) are still available!
+- **Free seats** ratio is **≥ 45%** (`MIN_AVAILABILITY_RATIO=0.45`), ensuring you are only alerted when prime rows (rows 7–10) are still available!
 
 ### Configuration Options
 
@@ -39,7 +39,7 @@ You can customize the watchdog by setting environment variables or GitHub Secret
 |---|---|---|
 | `FILM_PATTERN` | `dun` | Film name substring (`dun` or `dune`, case-insensitive) |
 | `AUDITORIUM_PATTERN` | `imax` | Auditorium name substring (or empty `""` for all auditoriums) |
-| `MIN_AVAILABILITY_RATIO` | `0.50` | Only report screenings with **at least 50% free seats** (guarantees prime rows are open) |
+| `MIN_AVAILABILITY_RATIO` | `0.45` | Only report screenings with **at least 45% free seats** (guarantees prime rows are open) |
 | `HORIZON_DAYS` | `180` | Days ahead to search (180 days easily covers December 2026) |
 | `HINT_ATTR` | `70-mm` | Attribute used to pre-filter candidate cinemas cheaply |
 | `REQUEST_DELAY` | `0.25` | Delay between API requests (seconds) |

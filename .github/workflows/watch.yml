@@ -16,6 +16,10 @@ on:
         description: "Report all matching screenings, even known ones"
         type: boolean
         default: false
+      test_notification:
+        description: "Send initial/startup test notification to verify Telegram and NTFY"
+        type: boolean
+        default: true
 
 # State is committed back to the repo — prevent concurrent runs from overwriting commits.
 concurrency:
@@ -43,7 +47,7 @@ jobs:
         env:
           FILM_PATTERN: dun
           AUDITORIUM_PATTERN: imax
-          MIN_AVAILABILITY_RATIO: ${{ vars.MIN_AVAILABILITY_RATIO || '0.50' }}
+          MIN_AVAILABILITY_RATIO: ${{ vars.MIN_AVAILABILITY_RATIO || '0.45' }}
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -52,7 +56,8 @@ jobs:
             --state state/seen.json \
             --report report.md \
             --title title.txt \
-            ${{ inputs.force_report && '--force-report' || '' }}
+            ${{ inputs.force_report && '--force-report' || '' }} \
+            ${{ inputs.test_notification && '--test-notification' || '' }}
 
       - name: Create issue for new screenings
         if: steps.watch.outputs.has_news == 'true'

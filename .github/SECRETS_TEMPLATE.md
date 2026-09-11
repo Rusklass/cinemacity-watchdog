@@ -32,7 +32,7 @@ You can set these under **Repository Variables** (or Secrets) if you wish to cus
 
 | Variable Name | Default | Description |
 |---|---|---|
-| `MIN_AVAILABILITY_RATIO` | `0.50` | Only triggers alerts when **more than 50% of the seats are free** (`0.50` = 50%, `0.80` = 80%). This filters out already crowded or almost sold-out shows and ensures you only get alerted when prime rows (like rows 7–10) are still open! |
+| `MIN_AVAILABILITY_RATIO` | `0.45` | Only triggers alerts when **more than 45% of the seats are free** (`0.45` = 45%, `0.80` = 80%). This filters out already crowded or almost sold-out shows and ensures you only get alerted when prime rows (like rows 7–10) are still open! |
 | `FILM_PATTERN` | `dun` | Matches the Czech title *„Duna: část třetí“* and English *„Dune“*. |
 | `AUDITORIUM_PATTERN` | `imax` | Filters for `IMAX VOLVO` at Praha Flora. Set to empty string `""` to monitor all auditoriums. |
 
