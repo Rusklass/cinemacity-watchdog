@@ -32,7 +32,7 @@ You can set these under **Repository Variables** (or Secrets) if you wish to cus
 
 | Variable Name | Default | Description |
 |---|---|---|
-| `MIN_AVAILABILITY_RATIO` | `0.45` | Only triggers alerts when **more than 45% of the seats are free** (`0.45` = 45%, `0.80` = 80%). This filters out already crowded or almost sold-out shows and ensures you only get alerted when prime rows (like rows 7–10) are still open! |
+| `MIN_AVAILABILITY_RATIO` | `0.05` | Only triggers alerts when **at least 5% of the seats are free** (`0.05` = 5%, `0.10` = 10%, `0.0` = any available seat). Setting this too high (e.g. 0.45 or 0.50) can prevent notifications for hot releases like Dune in IMAX where 70%+ of the seats sell or are reserved immediately! |
 | `FILM_PATTERN` | `dun` | Matches the Czech title *„Duna: část třetí“* and English *„Dune“*. |
 | `AUDITORIUM_PATTERN` | `imax` | Filters for `IMAX VOLVO` at Praha Flora. Set to empty string `""` to monitor all auditoriums. |
 

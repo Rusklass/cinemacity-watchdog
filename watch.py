@@ -33,8 +33,8 @@ HORIZON_DAYS = int(os.environ.get("HORIZON_DAYS", "180"))
 # Attribute used by API to pre-filter cinemas — helps discover IMAX auditoriums cheaply
 HINT_ATTR = os.environ.get("HINT_ATTR", "70-mm")
 DELAY = float(os.environ.get("REQUEST_DELAY", "0.25"))
-# Minimum ratio of free seats required to trigger alert (0.45 = at least 45% seats free)
-MIN_AVAILABILITY_RATIO = float(os.environ.get("MIN_AVAILABILITY_RATIO", "0.45"))
+# Minimum ratio of free seats required to trigger alert (0.05 = at least 5% seats free)
+MIN_AVAILABILITY_RATIO = float(os.environ.get("MIN_AVAILABILITY_RATIO", "0.05"))
 
 DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
@@ -128,6 +128,10 @@ def collect():
         day_cache[(cid, probe)] = fetch_day(cid, probe)
         if any(is_target_hall(e) for e in day_cache[(cid, probe)][1]):
             candidates.add(cid)
+
+    # Praha Flora (id 1052) is the only Cinema City cinema in Czech Republic with an IMAX hall.
+    if "imax" in AUDITORIUM_PATTERN and "1052" in cinemas:
+        candidates.add("1052")
 
     found = {}
     for cid in sorted(candidates):

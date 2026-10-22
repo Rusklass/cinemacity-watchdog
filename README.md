@@ -29,7 +29,7 @@ Each run executes ~45 fast HTTP queries in ~20 seconds.
 By default, it tracks screenings where:
 - **Film title** contains `dun` (matches both Czech *„Duna: část třetí“* and English *„Dune“*).
 - **Auditorium** contains `imax` (targeting **Praha Flora — IMAX VOLVO**).
-- **Free seats** ratio is **≥ 45%** (`MIN_AVAILABILITY_RATIO=0.45`), ensuring you are only alerted when prime rows (rows 7–10) are still available!
+- **Free seats** ratio is **≥ 5%** (`MIN_AVAILABILITY_RATIO=0.05`), ensuring newly added screenings are not silently ignored even if high-demand shows sell rapidly or open with seats reserved! Set to `0.0` to receive alerts on any screening that is not 100% sold out.
 
 ### Configuration Options
 
@@ -39,7 +39,7 @@ You can customize the watchdog by setting environment variables or GitHub Secret
 |---|---|---|
 | `FILM_PATTERN` | `dun` | Film name substring (`dun` or `dune`, case-insensitive) |
 | `AUDITORIUM_PATTERN` | `imax` | Auditorium name substring (or empty `""` for all auditoriums) |
-| `MIN_AVAILABILITY_RATIO` | `0.45` | Only report screenings with **at least 45% free seats** (guarantees prime rows are open) |
+| `MIN_AVAILABILITY_RATIO` | `0.05` | Only report screenings with **at least 5% free seats** (or `0.0` for all available shows) |
 | `HORIZON_DAYS` | `180` | Days ahead to search (180 days easily covers December 2026) |
 | `HINT_ATTR` | `70-mm` | Attribute used to pre-filter candidate cinemas cheaply |
 | `REQUEST_DELAY` | `0.25` | Delay between API requests (seconds) |
@@ -125,5 +125,5 @@ Useful CLI options:
 ## Maintenance
 
 - **Actions quota:** Public repositories have unlimited Actions minutes for free.
-- **60-day pause prevention:** GitHub automatically pauses scheduled cron workflows if a repository has no commits for 60 days. This watchdog commits state changes back to the repository, keeping it active.
+- **60-day pause prevention:** GitHub automatically pauses scheduled workflows if a repository has no commits for 60 days. The workflow now automatically performs a small keepalive commit if the repository has been inactive for 30 days, keeping the schedule alive indefinitely.
 - **After the movie run:** Disable the workflow (**Actions → Disable workflow**) or update `FILM_PATTERN` to monitor another upcoming release.

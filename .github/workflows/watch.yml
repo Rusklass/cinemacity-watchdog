@@ -8,8 +8,7 @@ name: Cinema City watchdog
 # compared to state/seen.json.
 on:
   schedule:
-    - cron: "8,38 * * * *"
-    - cron: "21,51 * * * *"
+    - cron: "8,21,38,51 * * * *"
   workflow_dispatch:
     inputs:
       force_report:
@@ -29,6 +28,7 @@ concurrency:
 permissions:
   contents: write
   issues: write
+  actions: write
 
 jobs:
   check:
@@ -47,7 +47,7 @@ jobs:
         env:
           FILM_PATTERN: dun
           AUDITORIUM_PATTERN: imax
-          MIN_AVAILABILITY_RATIO: ${{ vars.MIN_AVAILABILITY_RATIO || '0.45' }}
+          MIN_AVAILABILITY_RATIO: ${{ vars.MIN_AVAILABILITY_RATIO || '0.05' }}
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -77,18 +77,38 @@ jobs:
       - name: Save state back to repository
         run: |
           rm -f report.md title.txt
-          if git diff --quiet -- state/seen.json; then
-            echo "State unchanged, nothing to commit."
-            exit 0
-          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add state/seen.json
-          git commit -m "Update schedule state ($(date -u '+%Y-%m-%d %H:%M UTC'))"
-          # Retry rebase and push in case another commit landed
-          for i in 1 2 3; do
-            git pull --rebase --quiet origin "${GITHUB_REF_NAME}" && git push && exit 0
-            sleep 5
-          done
-          echo "::error::Failed to push state."
-          exit 1
+
+          if ! git diff --quiet -- state/seen.json; then
+            git add state/seen.json
+            git commit -m "Update schedule state ($(date -u '+%Y-%m-%d %H:%M UTC'))"
+            for i in 1 2 3; do
+              git pull --rebase --quiet origin "${GITHUB_REF_NAME}" && git push && exit 0
+              sleep 5
+            done
+            echo "::error::Failed to push state."
+            exit 1
+          fi
+
+          # Prevent GitHub Actions from suspending the scheduled workflow due to inactivity (60-day limit).
+          # If the last commit is older than 30 days, update state/.keepalive to keep schedule active.
+          LAST_COMMIT_TS=$(git log -1 --format=%ct)
+          NOW_TS=$(date +%s)
+          DAYS_SINCE_COMMIT=$(( (NOW_TS - LAST_COMMIT_TS) / 86400 ))
+          if [ "$DAYS_SINCE_COMMIT" -ge 30 ]; then
+            echo "Last commit was $DAYS_SINCE_COMMIT days ago. Updating keepalive commit to prevent schedule suspension."
+            date -u '+%Y-%m-%d %H:%M UTC' > state/.keepalive
+            git add state/.keepalive
+            git commit -m "Keepalive: prevent schedule suspension ($(date -u '+%Y-%m-%d'))"
+            for i in 1 2 3; do
+              git pull --rebase --quiet origin "${GITHUB_REF_NAME}" && git push && exit 0
+              sleep 5
+            done
+            echo "::error::Failed to push keepalive commit."
+            exit 1
+          fi
+
+          echo "State unchanged, nothing to commit."
+          exit 0
+
