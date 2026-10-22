@@ -3,12 +3,12 @@ name: Cinema City watchdog
 # Checks Cinema City schedule and opens a GitHub issue when new Dune IMAX
 # screenings are scheduled (GitHub will send email and mobile push notifications).
 #
-# Runs 4 times per hour. Public repositories have unlimited Actions minutes.
+# Runs every 10 minutes (6 times per hour). Public repositories have unlimited Actions minutes.
 # Extra runs cost nothing and break nothing — alerting is driven by changes
 # compared to state/seen.json.
 on:
   schedule:
-    - cron: "8,21,38,51 * * * *"
+    - cron: "*/10 * * * *"
   workflow_dispatch:
     inputs:
       force_report:
@@ -47,7 +47,7 @@ jobs:
         env:
           FILM_PATTERN: dun
           AUDITORIUM_PATTERN: imax
-          MIN_AVAILABILITY_RATIO: ${{ vars.MIN_AVAILABILITY_RATIO || '0.05' }}
+          MIN_AVAILABILITY_RATIO: ${{ vars.MIN_AVAILABILITY_RATIO || '0.30' }}
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}

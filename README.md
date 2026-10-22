@@ -13,7 +13,7 @@ Runs automatically 24/7 on GitHub Actions, requiring no local server or running 
 
 ## How It Works
 
-- **GitHub Actions Cron:** The workflow [`.github/workflows/watch.yml`](.github/workflows/watch.yml) runs every ~30 minutes (at :08, :38, :21, :51 past the hour). Since public repositories receive unlimited GitHub Actions minutes, it runs completely free.
+- **GitHub Actions Cron:** The workflow [`.github/workflows/watch.yml`](.github/workflows/watch.yml) runs every 10 minutes (`*/10 * * * *`). Since public repositories receive unlimited GitHub Actions minutes, it runs completely free.
 - **Public API:** [`watch.py`](watch.py) queries Cinema City's public JSON API (`/cz/data-api-service/v1/quickbook/10101/…`) without requiring any login or API keys.
 - **State Management:** Seen screenings are tracked in [`state/seen.json`](state/seen.json), which the workflow commits back to the repository after each run. Only new additions or cancellations trigger alerts.
 - **Delivery via GitHub Issues:** When new screenings appear, GitHub Actions creates an issue assigned directly to you, immediately firing email and phone push notifications via the GitHub Mobile app. The issue is closed immediately afterward to keep your open issues list clean.
@@ -29,7 +29,7 @@ Each run executes ~45 fast HTTP queries in ~20 seconds.
 By default, it tracks screenings where:
 - **Film title** contains `dun` (matches both Czech *„Duna: část třetí“* and English *„Dune“*).
 - **Auditorium** contains `imax` (targeting **Praha Flora — IMAX VOLVO**).
-- **Free seats** ratio is **≥ 5%** (`MIN_AVAILABILITY_RATIO=0.05`), ensuring newly added screenings are not silently ignored even if high-demand shows sell rapidly or open with seats reserved! Set to `0.0` to receive alerts on any screening that is not 100% sold out.
+- **Free seats** ratio is **≥ 30%** (`MIN_AVAILABILITY_RATIO=0.30`), ensuring you are alerted when prime rows (like rows 7–10) are still available! Set to `0.0` or a lower ratio via GitHub variables if you want alerts on any available screening.
 
 ### Configuration Options
 
@@ -39,7 +39,7 @@ You can customize the watchdog by setting environment variables or GitHub Secret
 |---|---|---|
 | `FILM_PATTERN` | `dun` | Film name substring (`dun` or `dune`, case-insensitive) |
 | `AUDITORIUM_PATTERN` | `imax` | Auditorium name substring (or empty `""` for all auditoriums) |
-| `MIN_AVAILABILITY_RATIO` | `0.05` | Only report screenings with **at least 5% free seats** (or `0.0` for all available shows) |
+| `MIN_AVAILABILITY_RATIO` | `0.30` | Only report screenings with **at least 30% free seats** (or `0.0` for all available shows) |
 | `HORIZON_DAYS` | `180` | Days ahead to search (180 days easily covers December 2026) |
 | `HINT_ATTR` | `70-mm` | Attribute used to pre-filter candidate cinemas cheaply |
 | `REQUEST_DELAY` | `0.25` | Delay between API requests (seconds) |

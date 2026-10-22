@@ -33,8 +33,8 @@ HORIZON_DAYS = int(os.environ.get("HORIZON_DAYS", "180"))
 # Attribute used by API to pre-filter cinemas — helps discover IMAX auditoriums cheaply
 HINT_ATTR = os.environ.get("HINT_ATTR", "70-mm")
 DELAY = float(os.environ.get("REQUEST_DELAY", "0.25"))
-# Minimum ratio of free seats required to trigger alert (0.05 = at least 5% seats free)
-MIN_AVAILABILITY_RATIO = float(os.environ.get("MIN_AVAILABILITY_RATIO", "0.05"))
+# Minimum ratio of free seats required to trigger alert (0.30 = at least 30% seats free)
+MIN_AVAILABILITY_RATIO = float(os.environ.get("MIN_AVAILABILITY_RATIO", "0.30"))
 
 DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
